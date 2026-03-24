@@ -182,24 +182,44 @@ function generate_consul_config {
   local readonly raft_protocol="$2"
   local readonly config_dir="$3"
   local readonly user="$4"
-  local readonly instance_resource_group="$5"
-  local readonly instance_id="$6"
-  local readonly scale_set_name="$7"
+  local readonly subscription_id="$5"
+  local readonly tenant_id="$6"
+  local readonly client_id="$7"
+  local readonly secret_access_key="$8"
+  local readonly scale_set_name="$9"
+  local readonly cloud_environment="${10}"
   local readonly config_path="$config_dir/$CONSUL_CONFIG_FILE"
 
   local instance_ip_address=""
+  local instance_id=""
   local instance_location=""
 
   instance_ip_address=$(get_instance_ip_address)
+  instance_id=$(get_instance_id)
   instance_location=$(get_instance_location)
-  peer_ip=$(get_other_scale_set_member_ip "$instance_resource_group" "$scale_set_name" "$instance_ip_address")
+
+  local azure_env="AzurePublicCloud"
+  if [[ "$cloud_environment" == "USGovernment" ]] || [[ "$cloud_environment" == "AzureUSGovernmentCloud" ]]; then
+    azure_env="AzureUSGovernmentCloud"
+  fi
 
   local retry_join_json=""
-  if [[ -z "$peer_ip" ]]; then
-    log_warn "Can not determine another scale set member. Will not automatically try to form a cluster based on Azure scale set."
+  if [[ -z "$scale_set_name" ]]; then
+    log_warn "Scale set name not provided. retry_join will not be configured."
   else
     retry_join_json=$(cat <<EOF
-"retry_join": [$peer_ip],
+"retry_join": [
+  {
+    "provider": "azure",
+    "tenant_id": "$tenant_id",
+    "client_id": "$client_id",
+    "secret_access_key": "$secret_access_key",
+    "subscription_id": "$subscription_id",
+    "tag_name": "ConsulCluster",
+    "tag_value": "true",
+    "environment": "$azure_env"
+  }
+],
 EOF
 )
   fi
@@ -224,7 +244,6 @@ EOF
   "node_name": "$instance_id",
   $retry_join_json
   "server": $server,
-  "ui": true,
   "raft_protocol": $raft_protocol
 }
 EOF
@@ -282,8 +301,7 @@ function run {
   local log_dir=""
   local bin_dir=""
   local user=""
-  local cluster_tag_key="$AZURE_TAG_KEY"
-  local cluster_tag_value=""
+  local cloud_environment="AzurePublicCloud"
   local subscription_id=""
   local tenant_id=""
   local client_id=""
@@ -360,6 +378,10 @@ function run {
         secret_access_key="$2"
         shift
         ;;
+      --cloud-environment)
+        cloud_environment="$2"
+        shift
+        ;;
       --help)
         print_usage
         exit
@@ -431,9 +453,12 @@ function run {
         "$raft_protocol" \
         "$config_dir" \
         "$user" \
-        "$resource_group" \
-        "$instance_id" \
-        "$scale_set_name"
+        "$subscription_id" \
+        "$tenant_id" \
+        "$client_id" \
+        "$secret_access_key" \
+        "$scale_set_name" \
+        "$cloud_environment"
   fi
 
   generate_supervisor_config "$SUPERVISOR_CONFIG_PATH" "$config_dir" "$data_dir" "$log_dir" "$bin_dir" "$user"
