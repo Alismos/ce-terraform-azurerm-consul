@@ -111,7 +111,7 @@ function get_other_scale_set_member_ip {
     local readonly scale_set_name="$2"
     local readonly my_ip_address="$3"
 
-    ip_list=($(az vmss nic list --resource-group "$resource_group_name" --vmss-name "$scale_set_name" | jq '.[].ipConfigurations[].privateIpAddress'))
+    ip_list=($(az vmss nic list --resource-group "$resource_group_name" --vmss-name "$scale_set_name" | jq -r '.[].ipConfigurations[].privateIpAddress // empty'))
     other_ip=""
 
     for ip in ${ip_list[@]}; do
@@ -205,7 +205,7 @@ function generate_consul_config {
       log_warn "Cannot determine another scale set member. retry_join will not be configured."
     else
       retry_join_json=$(cat <<EOF
-"retry_join": [$peer_ip],
+    "retry_join": ["$peer_ip"],
 EOF
 )
     fi
